@@ -197,11 +197,13 @@ unittest
 }
 
 ///ditto
-auto write(Char, T)(ref Buffer!Char buffer, T array)
+@safe @nogc
+Buffer!Char write(Char, T)(ref Buffer!Char buffer, T array)
     if (isSomeChar!Char && isArray!T && !isSomeString!T)
 {
     import std.traits: fullyQualifiedName;
-    auto activeBuffer = buffer.write(fullyQualifiedName!T);
+    static immutable name = fullyQualifiedName!T;
+    auto activeBuffer = buffer.write(name);
 
     //take of the trailing `]` character
     activeBuffer.buffer = buffer[fullyQualifiedName!T.length - 1 .. $];
