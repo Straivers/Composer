@@ -13,24 +13,31 @@ enum OverflowPolicy
     exception
 }
 
+enum runtime = size_t.max;
+
 /**
 The `Composer` is a configurable string joiner.
 
 It was originally designed to be a way to allow assert
 messages with runtime parameters in functions marked @nogc.
 */
-struct Composer(Char, OverflowPolicy policy = OverflowPolicy.assertFalse)
+struct Composer(Char, size_t buffSize = runtime, OverflowPolicy policy = OverflowPolicy.assertFalse)
 {
     alias OverflowCallback = void function(ref Composer, size_t numCharsAttempted);
 
 public:
-    static if (policy == OverflowPolicy.callback)
+    static if (buffSize == runtime && policy == OverflowPolicy.callback)
         @safe @nogc this(Char[] buffer, OverflowCallback callback) nothrow
         {
             _buffer = buffer;
             _overflowCallback = callback;
         }
-    else
+    else static if (buffSize != runtime && policy == OverflowPolicy.callback)
+        @safe @nogc this(OverflowCallback callback) nothrow
+        {
+            _overflowCallback = callback;
+        }
+    else static if (buffSize == runtime)
         @safe @nogc this(Char[] buffer) nothrow
         {
             _buffer = buffer;
@@ -123,8 +130,10 @@ public:
     }
 
 private:
-
-    Char[] _buffer;
+    static if (buffSize == runtime)
+        Char[] _buffer;
+    else
+        Char[buffSize] _buffer;
     
     ///The index of the next available character
     size_t _nextCharIndex;
@@ -134,15 +143,25 @@ private:
 }
 
 @("Composer.write")
-unittest
+@safe @nogc pure nothrow unittest
 {
     char[1024] msgBuffer;
 
     auto composer = Composer!char(msgBuffer);
 
     auto ptr = () @trusted { return cast(void*) 0xDEADBEEF; } ();
-
     auto cmp = composer.write("This is a message with numbers: ", 12, ", and pointers: ", ptr);
 
-    cmp.message.shouldEqual("This is a message with numbers: 12, and pointers: void*(0xDEADBEEF)");
+    assert(cmp.message == "This is a message with numbers: 12, and pointers: void*(0xDEADBEEF)");
+}
+
+@("Composer!buffSize.write")
+@safe @nogc pure nothrow unittest
+{
+    auto composer = Composer!(char, 2014)();
+
+    auto ptr = () @trusted { return cast(uint*) 0xDEADBEEF; } ();
+    auto cmp = composer.write("This is a message with numbers: ", 12, ", and pointers: ", ptr);
+
+    assert(cmp.message == "This is a message with numbers: 12, and pointers: uint*(0xDEADBEEF)");
 }

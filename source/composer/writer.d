@@ -36,11 +36,11 @@ Returns:
     the function. In the event of error, `numCharsWritten`
     will be 0.
 */
-auto write(Char, A...)(ref Buffer!Char buffer, A args)
+auto write(Char, A...)(auto ref Buffer!Char buffer, A args)
 {
     auto activeBuffer = buffer;
 
-    foreach(arg; args)
+    foreach(ref arg; args)
     {
         activeBuffer = activeBuffer.write(arg);
 
@@ -51,7 +51,17 @@ auto write(Char, A...)(ref Buffer!Char buffer, A args)
     return activeBuffer;
 }
 
+@("write.all")
+@safe @nogc pure nothrow unittest
+{
+    char[128] chars;
+    auto result = write(Buffer!char(chars[]), "testMSG ", 20, 'c', " alo ", false);
+
+    assert(chars[0 .. result.numCharsWritten] == "testMSG 20c alo false");
+}
+
 ///ditto
+@safe @nogc
 auto write(Char, T)(ref Buffer!Char buffer, T integral)
     if (isSomeChar!Char && isIntegral!T && !is(T == enum))
 {
@@ -86,13 +96,14 @@ auto write(Char, T)(ref Buffer!Char buffer, T integral)
 }
 
 ///ditto
+@safe @nogc
 auto write(Char, T)(ref Buffer!Char buffer, T boolValue)
     if (isSomeChar!Char && is(T == bool))
 {
     import std.utf: byUTF;
     import std.array: array;
 
-    enum strings = ["true".byUTF!Char.array, "false".byUTF!Char.array];
+    static immutable strings = ["false".byUTF!Char.array, "true".byUTF!Char.array];
 
     const stringLength = strings[boolValue].length;
     if (buffer.length >= stringLength)
@@ -101,7 +112,19 @@ auto write(Char, T)(ref Buffer!Char buffer, T boolValue)
     return result(buffer, stringLength);
 }
 
+@("write.bool")
+@safe @nogc pure nothrow unittest
+{
+    char[32] chars;
+    auto result = Buffer!char(chars[]).write(true);
+    assert(chars[0..result.numCharsWritten] == "true");
+
+    result = Buffer!char(chars[]).write(false);
+    assert(chars[0..result.numCharsWritten] == "false");
+}
+
 ///ditto
+@safe @nogc
 auto write(Char, T)(ref Buffer!Char buffer, T character)
     if (isSomeChar!Char && isSomeChar!T)
 {
@@ -125,7 +148,8 @@ auto write(Char, T)(ref Buffer!Char buffer, T character)
     return result(buffer, numRequiredChars);
 }
 
-@safe
+///ditto
+@safe @nogc
 auto write(Char, T)(ref Buffer!Char buffer, T pointer)
     if (isSomeChar!Char && isPointer!T)
 {
@@ -161,15 +185,15 @@ auto write(Char, T)(ref Buffer!Char buffer, T pointer)
 }
 
 @("write.pointer")
+@safe @nogc pure nothrow
 unittest
 {
     char[32] chars;
     auto buffer = Buffer!char(chars[]);
-    auto result = buffer.write(&chars[0]);
-    auto resultStr = cast(string) chars[0..result.numCharsWritten];
+    auto result = buffer.write(()@trusted{return cast(char*) 0xDEADBEEF;}());
+    auto resultStr = chars[0..result.numCharsWritten];
 
-    import std.conv: castFrom;
-    assert(castFrom!string.to!(char*)(resultStr) == &chars[0]);
+    assert(resultStr == "char*(0xDEADBEEF)");
 }
 
 ///ditto
@@ -206,7 +230,7 @@ auto write(Char, T)(ref Buffer!Char buffer, T array)
 }
 
 @("write.array")
-unittest
+@safe pure nothrow unittest
 {
     static immutable array = [0, 1, -2, 3, 400];
 
@@ -214,10 +238,11 @@ unittest
     auto buffer = Buffer!char(chars[]);
     auto result = buffer.write(array);
     const str = chars[0 .. result.numCharsWritten];
-    chars[0 .. result.numCharsWritten].shouldEqual("immutable(int)[0, 1, -2, 3, 400]");
+    assert(chars[0 .. result.numCharsWritten] == "immutable(int)[0, 1, -2, 3, 400]");
 }
 
 ///ditto
+@safe @nogc
 auto write(Char, T)(ref Buffer!Char buffer, T str)
     if (isSomeChar!Char && isSomeString!T)
 {
@@ -256,7 +281,7 @@ auto write(Char, T)(ref Buffer!Char buffer, T str)
 
 version(unittest)
 @Types!(char, wchar, dchar)
-@safe testWriteString(T)() {
+@safe writeString(T)() {
     import std.utf: byUTF;
     import std.array: array;
 
@@ -289,54 +314,24 @@ auto write(Char, T)(ref Buffer!Char buffer, T object)
     
     static if (hasMember!(T, "toString"))
         return buffer.write(object.toString());
-    else //todo: figure out how to describe the object's contents
-        return buffer.write(fullyQualifiedName!T);
+    else
+        return buffer.dumpObjectContents(structure);
 }
 
 ///ditto
 auto write(Char, T)(ref Buffer!Char buffer, auto ref T structure)
     if (isSomeChar!Char && is(T == struct))
 {
-    import std.traits: hasMember, FieldNameTuple, fullyQualifiedName;
+    import std.traits: hasMember;
 
     static if (hasMember!(T, "toString"))
         return buffer.write(structure.toString());
     else
-    {
-        auto activeBuffer = buffer;
-
-        activeBuffer = activeBuffer.write(fullyQualifiedName!T, "{ ");
-
-        if (activeBuffer.numCharsWritten == 0)
-            return result(buffer, 0);
-
-        enum fields = FieldNameTuple!T;
-        
-        if (fields.length > 0)
-        {
-            mixin("activeBuffer = activeBuffer.write(fields[0], \": \", structure." ~ fields[0] ~ ");");
-            
-            if (activeBuffer.numCharsWritten == 0)
-                return result(buffer, 0);
-        }
-
-        static foreach(field; fields)
-        {
-            activeBuffer = activeBuffer.write(", ");
-            mixin("activeBuffer = activeBuffer.write(field, \": \", structure." ~ field ~ ");");
-
-            if (activeBuffer.numCharsWritten == 0)
-                return result(buffer, 0);
-        }
-
-        activeBuffer = activeBuffer.write(" }");
-
-        return activeBuffer;
-    }
+        return buffer.dumpObjectContents(structure);
 }
 
 @("write.struct")
-unittest
+@safe @nogc pure nothrow unittest
 {
     struct TestStruct
     {
@@ -350,6 +345,41 @@ unittest
     auto result = buffer.write(TestStruct(-129873, false, "Hello!"));
     auto resultStr = chars[0..result.numCharsWritten];
     // writelnUt(resultStr);
+}
+
+@safe @nogc dumpObjectContents(Char, T)(ref Buffer!Char buffer, auto ref T object) pure nothrow
+{
+    import std.traits: FieldNameTuple, fullyQualifiedName;
+
+    auto activeBuffer = buffer;
+
+    activeBuffer = activeBuffer.write(fullyQualifiedName!T, "{ ");
+
+    if (activeBuffer.numCharsWritten == 0)
+        return result(buffer, 0);
+
+    enum fields = FieldNameTuple!T;
+    
+    if (fields.length > 0)
+    {
+        mixin("activeBuffer = activeBuffer.write(fields[0], \": \", object." ~ fields[0] ~ ");");
+        
+        if (activeBuffer.numCharsWritten == 0)
+            return result(buffer, 0);
+    }
+
+    static foreach(field; fields)
+    {
+        activeBuffer = activeBuffer.write(", ");
+        mixin("activeBuffer = activeBuffer.write(field, \": \", object." ~ field ~ ");");
+
+        if (activeBuffer.numCharsWritten == 0)
+            return result(buffer, 0);
+    }
+
+    activeBuffer = activeBuffer.write(" }");
+
+    return activeBuffer;
 }
 
 pragma(inline)
