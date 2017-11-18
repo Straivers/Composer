@@ -36,13 +36,13 @@ Returns:
     the function. In the event of error, `numCharsWritten`
     will be 0.
 */
-auto write(Char, A...)(auto ref Buffer!Char buffer, A args)
+Buffer!Char write(Char, A...)(auto ref Buffer!Char buffer, A args)
 {
     auto activeBuffer = buffer;
 
     foreach(ref arg; args)
     {
-        activeBuffer = activeBuffer.write(arg);
+        activeBuffer = write(activeBuffer, arg);
 
         if (activeBuffer.numCharsWritten == 0)
             return result(buffer, 0);
@@ -62,7 +62,7 @@ auto write(Char, A...)(auto ref Buffer!Char buffer, A args)
 
 ///ditto
 @safe @nogc
-auto write(Char, T)(ref Buffer!Char buffer, T integral)
+Buffer!Char write(Char, T)(ref Buffer!Char buffer, T integral)
     if (isSomeChar!Char && isIntegral!T && !is(T == enum))
 {
     import std.traits: Unqual, Unsigned;
@@ -97,7 +97,7 @@ auto write(Char, T)(ref Buffer!Char buffer, T integral)
 
 ///ditto
 @safe @nogc
-auto write(Char, T)(ref Buffer!Char buffer, T boolValue)
+Buffer!Char write(Char, T)(ref Buffer!Char buffer, T boolValue)
     if (isSomeChar!Char && is(T == bool))
 {
     import std.utf: byUTF;
@@ -125,7 +125,7 @@ auto write(Char, T)(ref Buffer!Char buffer, T boolValue)
 
 ///ditto
 @safe @nogc
-auto write(Char, T)(ref Buffer!Char buffer, T character)
+Buffer!Char write(Char, T)(ref Buffer!Char buffer, T character)
     if (isSomeChar!Char && isSomeChar!T)
 {
     import std.utf: byUTF, codeLength;
@@ -150,7 +150,7 @@ auto write(Char, T)(ref Buffer!Char buffer, T character)
 
 ///ditto
 @safe @nogc
-auto write(Char, T)(ref Buffer!Char buffer, T pointer)
+Buffer!Char write(Char, T)(ref Buffer!Char buffer, T pointer)
     if (isSomeChar!Char && isPointer!T)
 {
     import std.traits: PointerTarget, fullyQualifiedName;
@@ -245,7 +245,7 @@ Buffer!Char write(Char, T)(ref Buffer!Char buffer, T array)
 
 ///ditto
 @safe @nogc
-auto write(Char, T)(ref Buffer!Char buffer, T str)
+Buffer!Char write(Char, T)(ref Buffer!Char buffer, T str)
     if (isSomeChar!Char && isSomeString!T)
 {
     import std.range: ElementEncodingType;
@@ -306,10 +306,56 @@ version(unittest)
 }
 
 ///ditto
-auto write(Char, T)(ref Buffer!Char buffer, T object)
+@safe @nogc
+Buffer!Char write(Char, T)(ref Buffer!Char buffer, T enumeration)
+    if (isSomeChar!Char && is(T == enum))
+{
+    import std.traits: fullyQualifiedName, EnumMembers;
+    import std.meta: NoDuplicates;
+    import std.conv: to;
+
+    auto activeBuffer = buffer.write(fullyQualifiedName!T, '.');
+
+    if (activeBuffer.numCharsWritten == 0)
+        return result(buffer, 0);
+
+    //write enum name
+    //generate if statements
+    switch(enumeration)
+    {
+        foreach(member; NoDuplicates!(EnumMembers!T))
+        {
+        case member:
+            enum memberName = "name_" ~ member.to!string;
+            mixin("static immutable " ~ memberName ~ " = member.to!string;");
+            mixin("activeBuffer = activeBuffer.write(" ~ memberName ~ ");");
+
+            if (activeBuffer.numCharsWritten == 0)
+                return result(buffer, 0);
+            return activeBuffer;
+        }
+        default:
+    }
+    
+    return activeBuffer;
+}
+
+@("write.enum")
+@safe @nogc pure nothrow unittest
+{
+    import std.traits: fullyQualifiedName;
+    enum Enum { value1, value2 }
+
+    char[128] chars;
+    auto result = Buffer!char(chars[]).write(Enum.value1);
+    assert(chars[0..result.numCharsWritten] == fullyQualifiedName!(Enum.value1));
+}
+
+///ditto
+Buffer!Char write(Char, T)(ref Buffer!Char buffer, T object)
     if (isSomeChar!Char && (is(T == class) || is(T == interface)))
 {
-    import std.traits: hasMember, fullyQualifiedName;
+    import std.traits: hasMember;
 
     if (object is null)
         return buffer.write("null");
@@ -321,7 +367,7 @@ auto write(Char, T)(ref Buffer!Char buffer, T object)
 }
 
 ///ditto
-auto write(Char, T)(ref Buffer!Char buffer, auto ref T structure)
+Buffer!Char write(Char, T)(ref Buffer!Char buffer, auto ref T structure)
     if (isSomeChar!Char && is(T == struct))
 {
     import std.traits: hasMember;
@@ -349,7 +395,8 @@ auto write(Char, T)(ref Buffer!Char buffer, auto ref T structure)
     // writelnUt(resultStr);
 }
 
-@safe @nogc dumpObjectContents(Char, T)(ref Buffer!Char buffer, auto ref T object) pure nothrow
+@safe @nogc
+Buffer!Char dumpObjectContents(Char, T)(ref Buffer!Char buffer, auto ref T object) pure nothrow
 {
     import std.traits: FieldNameTuple, fullyQualifiedName;
 
