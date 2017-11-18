@@ -103,7 +103,7 @@ public:
     Params:
         args = The components of the message to join
     */
-    @safe @nogc ref Composer write(A...)(A args)
+    ref Composer write(A...)(A args)
     {
         static import composer.writer;
 
@@ -142,7 +142,7 @@ private:
         OverflowCallback _overflowCallback;
 }
 
-@("Composer.write")
+@("Composer.dynamic.write")
 @safe @nogc pure nothrow unittest
 {
     char[1024] msgBuffer;
@@ -155,7 +155,7 @@ private:
     assert(cmp.message == "This is a message with numbers: 12, and pointers: void*(0xDEADBEEF)");
 }
 
-@("Composer!buffSize.write")
+@("Composer.static.write")
 @safe @nogc pure nothrow unittest
 {
     auto composer = Composer!(char, 2014)();
