@@ -252,12 +252,10 @@ Buffer!Char write(Char, T)(ref Buffer!Char buffer, T str)
 
     static if (is(ElementEncodingType!T == Char))
     {
-        import core.stdc.string: memcpy;
-
         if (str.length > buffer.length)
             return result(buffer, 0);
 
-        memcpy(&buffer[0], &str[0], str.length * Char.sizeof);
+        buffer[0..str.length] = str[];
 
         return result(buffer, str.length);
     }
@@ -265,16 +263,14 @@ Buffer!Char write(Char, T)(ref Buffer!Char buffer, T str)
     {
         import std.utf: byUTF;
 
-        size_t numCharsWritten;
-
+        size_t numCharsWritten = 0;
         foreach(strChar; str.byUTF!Char)
         {
-            assert(numCharsWritten < buffer.length);
+            if (numCharsWritten == buffer.length)
+                return result(buffer, 0);
+
             buffer[numCharsWritten] = strChar;
             numCharsWritten++;
-
-            if (numCharsWritten >= buffer.length)
-                return result(buffer, 0);
         }
 
         return result(buffer, numCharsWritten);
@@ -314,7 +310,8 @@ Buffer!Char write(Char, T)(ref Buffer!Char buffer, T enumeration)
     import std.meta: NoDuplicates;
     import std.conv: to;
 
-    auto activeBuffer = buffer.write(fullyQualifiedName!T, '.');
+    static immutable fqn = fullyQualifiedName!T;
+    auto activeBuffer = buffer.write(fqn, '.');
 
     if (activeBuffer.numCharsWritten == 0)
         return result(buffer, 0);
